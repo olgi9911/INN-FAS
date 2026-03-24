@@ -1,0 +1,1 @@
+python train.py --config configs/cnc_fas.yaml --source OCI --target M

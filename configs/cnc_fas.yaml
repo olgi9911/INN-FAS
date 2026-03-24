@@ -1,0 +1,26 @@
+dataset:
+  root_path: "/shared"
+  test_path: "/shared"
+  source: 'oci'    # c, i, o, m, ci, ..., cio, ..., ciom
+  target: 'm'    # c, i, o, m, ci, ..., cio, ..., ciom
+  num_workers: 8
+
+model:
+  backbone: "ViT-B/16"      # Options: ViT-B/16, ViT-L/14
+  feature_layers: [3, 7, 11]
+  n_ctx: 12                 # Length of learnable prompt
+  ctx_init: ""              # Initialization text (empty for random)
+
+train:
+  precision: "amp"      # Options: "amp" or "fp32"
+  batch_size: 32
+  epochs: 100
+  seed: 42
+  lr: 0.0002
+  output_dir: "output"
+  save_every: 5             # Save checkpoint every N epochs
+  eval_every: 1             # Evaluate every N epochs
+
+optimizer:
+  type: "adam"
+  weight_decay: 0.0001
