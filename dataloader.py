@@ -143,8 +143,8 @@ class FASDataset(Dataset):
                     processed_img = (processed_img * 255).astype(np.uint8)
                 else:
                     # Values might already be in [0,255] range but stored as float
-                    # processed_img = np.clip(processed_img, 0, 255).astype(np.uint8)
-                    processed_img = (processed_img / 255).astype(np.uint8) # Performance improvement for DHU
+                    processed_img = np.clip(processed_img, 0, 255).astype(np.uint8)
+                    # processed_img = (processed_img / 255).astype(np.uint8) # Performance improvement for DHU
             elif processed_img.dtype != np.uint8:
                 # Convert other integer types to uint8
                 processed_img = processed_img.astype(np.uint8)

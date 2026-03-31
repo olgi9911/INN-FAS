@@ -33,10 +33,10 @@ class CNCTrainer:
         self.model.to(self.device)
         
         # 4. Optimizer Setup
-        # We optimize: Prompts, Fusion, MoE, Decoder, AND Layer Projectors
+        # We optimize: Prompts, Fusion, INN, Decoder, AND Layer Projectors
         params = list(self.model.prompt_learner.parameters()) + \
                  list(self.model.fusion.parameters()) + \
-                 list(self.model.moe.parameters()) + \
+                 list(self.model.inn.parameters()) + \
                  list(self.model.decoder.parameters()) + \
                  list(self.model.layer_projectors.parameters())
         
@@ -50,17 +50,11 @@ class CNCTrainer:
 
         # 3. Initialize based on type
         if opt_type == 'adam':
-            self.optimizer = torch.optim.Adam(
-                params, lr=lr, weight_decay=weight_decay
-            )
+            self.optimizer = torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
         elif opt_type == 'adamw':
-            self.optimizer = torch.optim.AdamW(
-                params, lr=lr, weight_decay=weight_decay
-            )
+            self.optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
         elif opt_type == 'sgd':
-            self.optimizer = torch.optim.SGD(
-                params, lr=lr, momentum=0.9, weight_decay=weight_decay
-            )
+            self.optimizer = torch.optim.SGD(params, lr=lr, momentum=0.9, weight_decay=weight_decay)
         else:
             raise ValueError(f"Unsupported optimizer type: {opt_type}")
         
@@ -71,13 +65,18 @@ class CNCTrainer:
         
         self.scaler = torch.amp.GradScaler('cuda') if prec == 'amp' else None
 
+        # Load URD MLE Weighting
+        self.lambda_mle = self.cfg.get('lambda_mle', 0.001)
+
     def compute_loss(self, output, label):
         """
         CNC Loss Logic.
         """
         layer_logits = output["layer_logits"] # List of {enc, dec}
         maps = output["anomaly_maps"]         # [B, L, H, W]
-        router_logits = output["router_logits"]
+        # router_logits = output["router_logits"]
+        log_prior = output["log_prior"]
+        log_post = output["log_post"]
         
         # ======================================================================
         # 1. Distillation Loss (Reconstruction)
@@ -98,25 +97,28 @@ class CNCTrainer:
         loss_constraint = loss_cls_enc # + 0.1 * loss_cls_dec
         
         # ======================================================================
-        # 3. MoE Load Balancing
+        # 3. URD Density Estimation Loss (MLE)
         # ======================================================================
-        router_probs = F.softmax(router_logits, dim=1)
-        importance = router_probs.sum(dim=0)
-        std_imp = torch.std(importance)
-        mean_imp = importance.mean() + 1e-6
-        loss_moe = (std_imp / mean_imp) ** 2
+        # router_probs = F.softmax(router_logits, dim=1)
+        # importance = router_probs.sum(dim=0)
+        # std_imp = torch.std(importance)
+        # mean_imp = importance.mean() + 1e-6
+        # loss_moe = (std_imp / mean_imp) ** 2
+        loss_mle = -torch.mean(log_prior) - torch.mean(log_post)
+        loss_mle /= self.model.vit_width
         
         # ======================================================================
         # Total Loss
         # ======================================================================
-        total_loss = loss_distill + loss_constraint + loss_moe
+        total_loss = loss_distill + loss_constraint + self.lambda_mle * loss_mle
         
         return total_loss, {
             "loss": total_loss.item(),
             "distill": loss_distill.item(),
             "cls_enc": loss_cls_enc.item(),
             "cls_dec": loss_cls_dec.item(),
-            "moe": loss_moe.item()
+            # "moe": loss_moe.item()
+            "mle": loss_mle.item()
         }
 
     def train_epoch(self, train_loader, epoch):
@@ -127,7 +129,8 @@ class CNCTrainer:
             "distill": 0.0,
             "cls_enc": 0.0,
             "cls_dec": 0.0,
-            "moe": 0.0
+            # "moe": 0.0
+            "mle": 0.0
         }
         # pbar = tqdm.tqdm(train_loader, desc=f"Epoch {epoch}", leave=False)
         

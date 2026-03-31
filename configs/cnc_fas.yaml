@@ -7,20 +7,20 @@ dataset:
 
 model:
   backbone: "ViT-B/16"      # Options: ViT-B/16, ViT-L/14
-  feature_layers: [3, 7, 11]
+  feature_layers: [3, 4, 5]
   n_ctx: 12                 # Length of learnable prompt
   ctx_init: ""              # Initialization text (empty for random)
 
 train:
-  precision: "amp"      # Options: "amp" or "fp32"
-  batch_size: 32
+  precision: "fp32"      # Options: "amp" or "fp32"
+  batch_size: 128
   epochs: 100
   seed: 42
-  lr: 0.0002
+  lr: 0.00005
   output_dir: "output"
   save_every: 5             # Save checkpoint every N epochs
   eval_every: 1             # Evaluate every N epochs
 
 optimizer:
   type: "adam"
-  weight_decay: 0.0001
+  weight_decay: 0.000001

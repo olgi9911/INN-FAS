@@ -39,6 +39,6 @@ def load_config():
     config['train']['seed'] = args.seed
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    config['name'] = f"CNC_{config['dataset']['source']}_to_{config['dataset']['target']}_{timestamp}"
+    config['name'] = f"INN_{config['dataset']['source']}_to_{config['dataset']['target']}_{timestamp}"
     
     return config

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from clip import clip
+from flow_net.denet import denoise_net
 
 
 # =================================================================================
@@ -222,7 +223,10 @@ class CNC_FAS(nn.Module):
         
         # 2. Main Architecture (at ViT Width)
         self.fusion = MultiLayerFusion(self.vit_width, self.vit_width, len(self.feat_layers))
-        self.moe = GatedMixtureOfExperts(self.vit_width, num_experts=5, top_k=2)
+        # self.moe = GatedMixtureOfExperts(self.vit_width, num_experts=5, top_k=2)
+
+        self.inn = denoise_net(self.vit_width, cfg.get('flow_blocks', 3))
+
         self.decoder = Decoder(self.vit_width, num_layers=len(self.feat_layers))
         
         # 3. Separate Projectors for EACH layer in `feature_layers`
@@ -269,14 +273,17 @@ class CNC_FAS(nn.Module):
         )
         text_features = F.normalize(text_features, dim=-1).view(L, 2, -1)
 
-        # --- B. Fusion & MoE ---
+        # --- B. Fusion & Contraction Mapping ---
         # Fusing the ENTIRE sequence (CLS included)
         fused_seq = self.fusion(raw_sequences)
-        moe_seq, router_logits = self.moe(fused_seq)
+        # moe_seq, router_logits = self.moe(fused_seq)
+
+        z_flat, log_prior, log_post = self.inn(fused_seq.view(-1, self.vit_width))
+        z_seq = z_flat.view(B, seq_len, self.vit_width)
         
         # --- C. Reconstruction ---
         # Decoder produces 3 layers of reconstructed [CLS + Patches]
-        rec_sequences = self.decoder(moe_seq)
+        rec_sequences = self.decoder(z_seq)
 
         # --- D. Loss Components ---
         layer_maps = []
@@ -342,6 +349,8 @@ class CNC_FAS(nn.Module):
             "layer_logits": layer_logits,
             "anomaly_maps": stacked_maps,
             "spoof_score": spoof_score,
-            "router_logits": router_logits,
+            # "router_logits": router_logits,
+            "log_prior": log_prior,
+            "log_post": log_post,
             "final_map": final_map
         }

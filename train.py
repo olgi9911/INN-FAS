@@ -33,7 +33,7 @@ def print_header():
     print(h_epoch + h_valid + h_train + h_best + h_time)    
     
     sub_valid = "APCER  BPCER   HTER    AUC"   # 5 + 2 + 5 + 2 + 5 + 2 + 5 = 26
-    sub_train = "   lr     L_dis  L_con  L_moe  L_tot" # 8 + 2 + 5 + 2 + 5 + 2 + 5 + 2 + 5 = 36
+    sub_train = "   lr     L_dis  L_con  L_mle  L_tot" # 8 + 2 + 5 + 2 + 5 + 2 + 5 + 2 + 5 = 36
     sub_best  = " HTER     AUC "               # 5 + 4 + 5 = 14
     print(f"|       | {sub_valid} | {sub_train} | {sub_best} |               |")
     print("-" * 110)
@@ -119,7 +119,7 @@ def main():
         if epoch % cfg['train']['eval_every'] == 0 or epoch == cfg['train']['epochs']:
             metrics = trainer.evaluate(val_loader)
 
-            is_best = metrics['HTER'] < best_hter
+            is_best = metrics['HTER'] < best_hter or (metrics['HTER'] == best_hter and metrics['AUC'] > best_auc)
             if is_best:
                 best_hter = metrics['HTER']
                 best_auc = metrics['AUC']
@@ -127,11 +127,11 @@ def main():
             current_lr = trainer.optimizer.param_groups[0]['lr']
             valid_str = f"{metrics['APCER']*100:5.2f}  {metrics['BPCER']*100:5.2f}  {metrics['HTER']*100:5.2f}  {metrics['AUC']*100:5.2f}"
         
-            # Train: lr, L_dist, L_cons, L_moe, L_total
+            # Train: lr, L_dist, L_cons, L_mle, L_total
             # Note: L_cons = cls_enc + 0.1*cls_dec. Let's just print cls_enc or sum them for brevity.
             # Let's use L_cons derived roughly from the dict or just print components.
             l_cons = loss_dict['cls_enc'] + 0.1 * loss_dict['cls_dec']
-            train_str = f"{current_lr:.6f}  {loss_dict['distill']:.3f}  {l_cons:.3f}  {loss_dict['moe']:.3f}  {loss_dict['loss']:.3f}"
+            train_str = f"{current_lr:.6f}  {loss_dict['distill']:.3f}  {l_cons:.3f}  {loss_dict['mle']:.3f}  {loss_dict['loss']:.3f}"
             
             # Best: HTER, AUC
             best_str = f"{best_hter*100:5.2f}    {best_auc*100:5.2f}"

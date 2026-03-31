@@ -6,7 +6,12 @@ from sklearn.metrics import roc_curve
 from sklearn.metrics import roc_auc_score
 from utils.statistic import *
 
-def evaluate(val_loader, model, device):
+def evaluate(val_loader, model, device, alpha=0.001):
+    """
+    Evaluates the model utilizing the unified anomaly score.
+    alpha: Weight coefficient for the density estimation log-likelihood. 
+           Defaulted to 0.001 as recommended for image AD tasks in URD.
+    """
     model.eval()
     all_labels = []
     all_scores = []
@@ -18,7 +23,24 @@ def evaluate(val_loader, model, device):
             labels = labels.to(device)
 
             outputs = model(images)
-            scores = outputs['spoof_score'].squeeze().cpu().numpy()
+
+            spoof_score = outputs['spoof_score'].squeeze()
+            log_prior = outputs['log_prior']
+            log_post = outputs['log_post']
+
+            mle_score = -(log_prior + log_post)  # Combined MLE score (negative log-likelihood)
+            # mle_score = -log_post
+            
+            # If the INN processed flattened tokens [B * Seq_Len], reshape to calculate the mean per image
+            B = images.shape[0]
+            if mle_score.dim() > 0 and mle_score.shape[0] != B:
+                mle_score = mle_score.view(B, -1).mean(dim=1)
+                
+                mle_score = mle_score.squeeze()
+
+            final_score = spoof_score + alpha * mle_score
+
+            scores = final_score.cpu().numpy()
             labels = labels.cpu().numpy()
 
             all_scores.extend(scores)
