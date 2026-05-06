@@ -25,12 +25,17 @@ def evaluate(val_loader, model, device, alpha=0.001):
             outputs = model(images)
 
             spoof_score = outputs['spoof_score'].squeeze()
-            log_prior = outputs['log_prior']
+            # log_prior = outputs['log_prior']
+            log_prior_main = outputs['log_prior_main']
+            log_prior_mixture = outputs['log_prior_mixture']
             log_post = outputs['log_post']
+            log_det_J_forward = log_post - log_prior_main  # URD inverse J → HGAD forward J conversion
 
-            mle_score = -(log_prior + log_post)  # Combined MLE score (negative log-likelihood)
+            # mle_score = -(log_prior + log_post)  # Combined MLE score (negative log-likelihood)
             # mle_score = -log_post
-            
+            # mle_score = -(log_prior_mixture + log_det_J_forward)  # Using the mixture log_prob with the Jacobian adjustment for MLE score
+            mle_score = -(log_prior_mixture + log_det_J_forward + log_post)
+
             # If the INN processed flattened tokens [B * Seq_Len], reshape to calculate the mean per image
             B = images.shape[0]
             if mle_score.dim() > 0 and mle_score.shape[0] != B:

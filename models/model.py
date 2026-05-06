@@ -278,7 +278,8 @@ class CNC_FAS(nn.Module):
         fused_seq = self.fusion(raw_sequences)
         # moe_seq, router_logits = self.moe(fused_seq)
 
-        z_flat, log_prior, log_post = self.inn(fused_seq.view(-1, self.vit_width))
+        # z_flat, log_prior, log_post = self.inn(fused_seq.view(-1, self.vit_width))
+        z_flat, log_prior_main, log_prior_mixture, log_post = self.inn(fused_seq.view(-1, self.vit_width))
         z_seq = z_flat.view(B, seq_len, self.vit_width)
         
         # --- C. Reconstruction ---
@@ -350,7 +351,9 @@ class CNC_FAS(nn.Module):
             "anomaly_maps": stacked_maps,
             "spoof_score": spoof_score,
             # "router_logits": router_logits,
-            "log_prior": log_prior,
+            # "log_prior": log_prior,
+            "log_prior_main": log_prior_main,
+            "log_prior_mixture": log_prior_mixture,
             "log_post": log_post,
             "final_map": final_map
         }

@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -68,6 +69,9 @@ class CNCTrainer:
         # Load URD MLE Weighting
         self.lambda_mle = self.cfg.get('lambda_mle', 0.001)
 
+        # If we want to use the mixture log_prob in the loss
+        self.lambda_mixture = self.cfg.get('lambda_mixture', 0.1)
+
     def compute_loss(self, output, label):
         """
         CNC Loss Logic.
@@ -75,7 +79,9 @@ class CNCTrainer:
         layer_logits = output["layer_logits"] # List of {enc, dec}
         maps = output["anomaly_maps"]         # [B, L, H, W]
         # router_logits = output["router_logits"]
-        log_prior = output["log_prior"]
+        # log_prior = output["log_prior"]
+        log_prior_main = output["log_prior_main"]
+        log_prior_mixture = output["log_prior_mixture"]
         log_post = output["log_post"]
         
         # ======================================================================
@@ -104,7 +110,15 @@ class CNCTrainer:
         # std_imp = torch.std(importance)
         # mean_imp = importance.mean() + 1e-6
         # loss_moe = (std_imp / mean_imp) ** 2
-        loss_mle = -torch.mean(log_prior) - torch.mean(log_post)
+
+        # loss_mle = -torch.mean(log_prior) - torch.mean(log_post)
+        log_det_J_forward = log_post - log_prior_main  # URD inverse J → HGAD forward J conversion
+
+        constant = (self.model.vit_width / 2) * math.log(2 * math.pi)
+        loss_main = -torch.mean(log_post) + constant #/ self.model.vit_width
+        loss_mixture   = -torch.mean(log_prior_mixture + log_det_J_forward) #/ self.model.vit_width
+        loss_mle  = loss_main + self.lambda_mixture * loss_mixture
+                
         loss_mle /= self.model.vit_width
         
         # ======================================================================

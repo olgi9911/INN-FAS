@@ -91,7 +91,8 @@ class denoise_net(nn.Module):
                 )
                 flow_net.append(flow)
         self.flow_net=nn.ModuleList(flow_net)
-        self.prior= LearnableNormal(channels)
+        # self.prior= LearnableNormal(channels)
+        self.prior = LearnableGaussianMixture(channels, num_centers=10)
 
     def f(self, x: Tensor):
         for i in range(self.num_modules):
@@ -118,9 +119,12 @@ class denoise_net(nn.Module):
     
     def forward(self, x: Tensor):
         predict_x= self.latent_variable(x)
-        log_prob_prior= self.prior(predict_x)
-        log_post= self.prob_predictor(predict_x, log_prob_prior)
-        return predict_x, log_prob_prior, log_post
+        # log_prob_prior= self.prior(predict_x)
+        log_prior_main, log_prior_mixture = self.prior(predict_x)
+        # log_post= self.prob_predictor(predict_x, log_prob_prior)
+        log_post= self.prob_predictor(predict_x, log_prior_main)
+        # return predict_x, log_prob_prior, log_post
+        return predict_x, log_prior_main, log_prior_mixture, log_post
 
 class LearnableNormal(nn.Module):
     def __init__(self, dim: int):
@@ -134,6 +138,56 @@ class LearnableNormal(nn.Module):
         self.normal = Normal(self.mean, self.std)
         return self.normal.log_prob(y).sum(dim=-1)
 
+class LearnableGaussianMixture(nn.Module):
+    def __init__(self, dim: int, num_centers: int = 10):
+        super().__init__()
+        self.dim = dim
+        self.num_centers = num_centers
 
+        # Main center: trained freely via main_log_prob → log_post path
+        # self.mu_main = nn.Parameter(torch.randn(dim) * 0.01)
+        self.mu_main = nn.Parameter(torch.zeros(dim))  # Initialize main center at zero for stability
 
+        # Offsets for centers 2..M; center 1 is fixed at zero offset by construction
+        self.delta_mu = nn.Parameter(torch.randn(num_centers - 1, dim) * 0.01)
 
+        # Intra-class mixture logits
+        self.psi = nn.Parameter(torch.zeros(num_centers))
+
+    def log_prob_main(self, z: torch.Tensor) -> torch.Tensor:
+        """
+        Single Gaussian at mu_main, free gradient to mu_main.
+        Replaces LearnableNormal as the prior fed into prob_predictor.
+        z: [B, D]
+        returns: [B]
+        """
+        sq_dist = torch.sum((z - self.mu_main) ** 2, dim=-1)
+        return -0.5 * sq_dist
+
+    def log_prob_mixture(self, z: torch.Tensor) -> torch.Tensor:
+        """
+        Full GMM over all intra-class centers.
+        mu_main is stop-gradiented — only delta_mu and psi receive gradients.
+        z: [B, D]
+        returns: [B]
+        """
+        mu_main_sg = self.mu_main.detach()
+
+        # Center 1: mu_main + 0, Centers 2, ..., M: mu_main + delta_mu_i
+        delta_0 = torch.zeros(1, self.dim, device=z.device, dtype=z.dtype)
+        all_deltas = torch.cat([delta_0, self.delta_mu], dim=0)        # [M, D]
+        all_centers = mu_main_sg.unsqueeze(0) + all_deltas             # [M, D]
+
+        log_c = F.log_softmax(self.psi, dim=0)                         # [M]
+
+        sq_dist = torch.sum(
+            (z.unsqueeze(1) - all_centers.unsqueeze(0)) ** 2, dim=-1   # [B, M]
+        )
+
+        return torch.logsumexp(-0.5 * sq_dist + log_c, dim=1)          # [B]
+    
+    def forward(self, x: Tensor):
+        log_prob_main = self.log_prob_main(x)
+        log_prob_mixture = self.log_prob_mixture(x)
+        
+        return log_prob_main, log_prob_mixture

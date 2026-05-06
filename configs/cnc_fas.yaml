@@ -14,9 +14,9 @@ model:
 train:
   precision: "fp32"      # Options: "amp" or "fp32"
   batch_size: 128
-  epochs: 100
+  epochs: 50
   seed: 42
-  lr: 0.00005
+  lr: 0.0005
   output_dir: "output"
   save_every: 5             # Save checkpoint every N epochs
   eval_every: 1             # Evaluate every N epochs
