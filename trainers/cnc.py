@@ -67,7 +67,7 @@ class CNCTrainer:
         self.scaler = torch.amp.GradScaler('cuda') if prec == 'amp' else None
 
         # Load URD MLE Weighting
-        self.lambda_mle = self.cfg.get('lambda_mle', 0.001)
+        self.lambda_mle = self.cfg.get('lambda_mle', 0.01)
 
         # If we want to use the mixture log_prob in the loss
         self.lambda_mixture = self.cfg.get('lambda_mixture', 0.1)
@@ -116,7 +116,8 @@ class CNCTrainer:
 
         constant = (self.model.vit_width / 2) * math.log(2 * math.pi)
         loss_main = -torch.mean(log_post) + constant #/ self.model.vit_width
-        loss_mixture   = -torch.mean(log_prior_mixture + log_det_J_forward) #/ self.model.vit_width
+        # loss_main = -torch.mean(log_post)
+        loss_mixture   = -torch.mean(log_prior_mixture + log_det_J_forward.detach()) #/ self.model.vit_width
         loss_mle  = loss_main + self.lambda_mixture * loss_mixture
                 
         loss_mle /= self.model.vit_width

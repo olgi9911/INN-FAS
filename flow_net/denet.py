@@ -109,6 +109,12 @@ class denoise_net(nn.Module):
             _, log_p_post = self.flow_net[i].inverse(z,log_p_prior)
         return log_p_post
 
+    # def prob_predictor(self, z: Tensor, log_p_prior: Tensor):
+    #     log_p = log_p_prior
+    #     for i in reversed(range(self.num_modules)):
+    #         z, log_p = self.flow_net[i].inverse(z, log_p)
+    #     return log_p
+
     def latent_variable(self, x: Tensor):
         z= self.f(x)
         return z
@@ -117,14 +123,28 @@ class denoise_net(nn.Module):
         x= self.g(z)
         return x
     
+    # def forward(self, x: Tensor):
+    #     predict_x= self.latent_variable(x)
+    #     # log_prob_prior= self.prior(predict_x)
+    #     log_prior_main, log_prior_mixture = self.prior(predict_x)
+    #     # log_post= self.prob_predictor(predict_x, log_prob_prior)
+    #     log_post= self.prob_predictor(predict_x, log_prior_main)
+    #     # return predict_x, log_prob_prior, log_post
+    #     return predict_x, log_prior_main, log_prior_mixture, log_post
+
     def forward(self, x: Tensor):
-        predict_x= self.latent_variable(x)
-        # log_prob_prior= self.prior(predict_x)
-        log_prior_main, log_prior_mixture = self.prior(predict_x)
-        # log_post= self.prob_predictor(predict_x, log_prob_prior)
-        log_post= self.prob_predictor(predict_x, log_prior_main)
-        # return predict_x, log_prob_prior, log_post
-        return predict_x, log_prior_main, log_prior_mixture, log_post
+        # Single forward pass: get z AND log|det J_f| together
+        log_det = torch.zeros(x.shape[0], device=x.device, dtype=x.dtype)
+        z = x
+        for i in range(self.num_modules):
+            z, log_det = self.flow_net[i].forward(z, log_det)
+
+        log_prior_main, log_prior_mixture = self.prior(z)
+
+        # log p(x) = log p(z) + log|det J_f|
+        log_post = log_prior_main + log_det
+
+        return z, log_prior_main, log_prior_mixture, log_post
 
 class LearnableNormal(nn.Module):
     def __init__(self, dim: int):
@@ -161,8 +181,8 @@ class LearnableGaussianMixture(nn.Module):
         z: [B, D]
         returns: [B]
         """
-        sq_dist = torch.sum((z - self.mu_main) ** 2, dim=-1)
-        return -0.5 * sq_dist
+        sq_dist = torch.sum((z - self.mu_main) ** 2, dim=-1) / self.dim
+        return -0.5 * sq_dist #- 0.5 * self.dim * np.log(2 * np.pi)  # Log-prob of isotropic Gaussian with fixed variance=1
 
     def log_prob_mixture(self, z: torch.Tensor) -> torch.Tensor:
         """
@@ -182,7 +202,7 @@ class LearnableGaussianMixture(nn.Module):
 
         sq_dist = torch.sum(
             (z.unsqueeze(1) - all_centers.unsqueeze(0)) ** 2, dim=-1   # [B, M]
-        )
+        ) / self.dim
 
         return torch.logsumexp(-0.5 * sq_dist + log_c, dim=1)          # [B]
     
